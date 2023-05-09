@@ -5,9 +5,6 @@ export interface IUser {
     password: string;
 }
 export interface IUserToken {
-    _id: mongoose.Types.ObjectId;
-    email: string;
-    createdAt: Date;
-    updatedAt: Date;
-    __v: number;
+    _id?: string;
+    userId?: string;
 }

@@ -8,4 +8,4 @@ const viewEngine = (app: Express) => {
     app.set('views', './src/views');
 };
 
-export default viewEngine
+export default viewEngine;

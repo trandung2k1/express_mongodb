@@ -7,4 +7,7 @@ router.post('/register', authorController.register);
 router.post('/login', authorController.login);
 router.post('/refresh', refreshTokenLimiter, authorController.requestRefreshToken);
 router.get('/logout', verifyToken, authorController.logout);
+router.post('/forgot-password', authorController.forgotPassword);
+router.get('/reset-password/:id/:token', authorController.resetPassword);
+router.post('/reset-password/:id/:token', authorController.confirmResetPassword);
 export default router;

@@ -5,6 +5,10 @@ import { generateAccessToken, generateRefreshToken } from '../utils/generateToke
 import redisClient from '../db/redis';
 import { IPayload, RequestCustom } from '../middlewares/auth.middleware';
 import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
+import transport from '../services/sendMail';
+import SMTPTransport from 'nodemailer/lib/smtp-transport';
+dotenv.config();
 const authorController = {
     register: async (req: Request, res: Response) => {
         const { email }: { email: string } = req.body;
@@ -49,6 +53,12 @@ const authorController = {
             if (!findUser) {
                 return res.status(404).json({
                     message: 'User not found',
+                });
+            }
+            const isValidPassword = await bcrypt.compare(req.body.password, findUser.password);
+            if (!isValidPassword) {
+                return res.status(400).json({
+                    message: 'Wrong password',
                 });
             }
             const { password, ...info } = findUser['_doc'];
@@ -159,6 +169,146 @@ const authorController = {
             }
             return res.status(200).json({
                 message: 'Logout',
+            });
+        } catch (error) {
+            if (error instanceof Error) {
+                return res.status(500).json({
+                    message: error.message,
+                });
+            }
+        }
+    },
+    forgotPassword: async (req: RequestCustom, res: Response) => {
+        const { email } = req.body;
+        try {
+            const findUser = await User.findOne({ email });
+            if (!findUser) {
+                return res.status(404).json({
+                    message: 'User not found',
+                });
+            }
+            const { password, ...info } = findUser['_doc'];
+            const accessToken = jwt.sign(
+                {
+                    id: info._id,
+                    email: info.email,
+                },
+                process.env.ACCESS_TOKEN_SECRET!,
+                {
+                    expiresIn: '15m',
+                },
+            );
+            const link = `http://localhost:4000/api/auth/reset-password/${info._id}/${accessToken}`;
+            const mailOptions = {
+                from: process.env.AUTH_EMAIL,
+                to: email,
+                subject: 'Reset Password',
+                html: `<p>Request a password change for your account.</p><p>This is link <b>exprise in 15 minutes</b>.</p><p>Click the <a href=${link}>here</a> to go to the password change page.</p>`,
+            };
+            transport.sendMail(
+                mailOptions,
+                (error: Error | null, info: SMTPTransport.SentMessageInfo) => {
+                    if (error) {
+                        return res.status(400).json({ message: 'Send mail error' });
+                    } else {
+                        console.log(info.response);
+                        return res.status(200).json({
+                            message: 'Send mail successfully. Please check your mailbox!',
+                        });
+                    }
+                },
+            );
+        } catch (error) {
+            if (error instanceof Error) {
+                return res.status(500).json({
+                    message: error.message,
+                });
+            }
+        }
+    },
+    resetPassword: async (req: Request, res: Response) => {
+        const { id, token } = req.params;
+        try {
+            const findUser = await User.findById(id);
+            if (!findUser) {
+                return res.status(404).json({
+                    message: 'User not found',
+                });
+            }
+            jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!, async (error, decoded) => {
+                if (error) {
+                    if (error.name === 'TokenExpiredError')
+                        return res.status(401).json({
+                            message: 'Token expired',
+                        });
+                    else if (error.name === 'JsonWebTokenError') {
+                        return res.status(400).json({
+                            message: error.message,
+                        });
+                    } else {
+                        return res.status(400).json({
+                            message: error?.message,
+                        });
+                    }
+                }
+                const data = decoded as jwt.JwtPayload & { id?: string; email: string };
+                return res.render('index', {
+                    title: 'HomePage',
+                    email: data.email,
+                    status: 'not verified',
+                });
+            });
+        } catch (error) {
+            if (error instanceof Error) {
+                return res.status(500).json({
+                    message: error.message,
+                });
+            }
+        }
+    },
+    confirmResetPassword: async (req: Request, res: Response) => {
+        const { id, token } = req.params;
+        const { password } = req.body;
+        try {
+            const findUser = await User.findById(id);
+            if (!findUser) {
+                return res.status(404).json({
+                    message: 'User not found',
+                });
+            }
+            jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!, async (error, decoded) => {
+                if (error) {
+                    if (error.name === 'TokenExpiredError')
+                        return res.status(401).json({
+                            message: 'Token expired',
+                        });
+                    else if (error.name === 'JsonWebTokenError') {
+                        return res.status(400).json({
+                            message: error.message,
+                        });
+                    } else {
+                        return res.status(400).json({
+                            message: error?.message,
+                        });
+                    }
+                }
+                const salt = await bcrypt.genSalt(10);
+                const hashPassword = await bcrypt.hash(password, salt);
+                await User.findByIdAndUpdate(
+                    id,
+                    {
+                        password: hashPassword,
+                    },
+                    {
+                        new: true,
+                    },
+                );
+                const data = decoded as jwt.JwtPayload & { id?: string; email: string };
+                return res.render('index', {
+                    title: 'HomePage',
+                    email: data.email,
+                    status: 'verified',
+                });
             });
         } catch (error) {
             if (error instanceof Error) {
